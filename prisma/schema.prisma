@@ -1,0 +1,50 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String       @id @default(uuid())
+  email       String       @unique
+  fullName    String
+  interviews  Interview[]
+  createdAt   DateTime     @default(now())
+}
+
+model Interview {
+  id                 String          @id @default(uuid())
+  userId             String
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  initialTopic       String
+  status             String          @default("in_progress")
+  evaluationCriteria Json
+  scoringMetrics     Json?
+  githubUsername     String?
+  githubRepo         String?
+  problemStatementText String?       @db.Text
+  githubCommitsData  Json?
+  turns              InterviewTurn[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([userId])
+}
+
+model InterviewTurn {
+  id           String    @id @default(uuid())
+  interviewId  String
+  interview    Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  turnSequence Int
+  aiQuestion   String    @db.Text
+  userAnswer   String?   @db.Text
+  originalAnswer String?   @db.Text
+  createdAt    DateTime  @default(now())
+
+  @@unique([interviewId, turnSequence])
+  @@index([interviewId, turnSequence])
+}

@@ -1,0 +1,14 @@
+node_modules
+.next
+generated
+.env
+.env.local
+.env.development
+.env.production
+*.log
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp*
+.yarn
