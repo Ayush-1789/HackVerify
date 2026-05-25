@@ -142,6 +142,7 @@ body {
     opacity: 0;
     transform: translateY(12px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -154,10 +155,13 @@ body {
 
 /* ── Recording Pulse ────────────────────────────────────────────── */
 @keyframes recording-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.4;
     transform: scale(0.85);
@@ -170,8 +174,15 @@ body {
 
 /* ── Recording Badge ────────────────────────────────────────────── */
 @keyframes badge-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
 }
 
 .recording-badge {
@@ -180,7 +191,9 @@ body {
 
 /* ── Transcribing Spinner ───────────────────────────────────────── */
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .transcribing-spinner {

@@ -14,7 +14,7 @@ import {
   safeParseJudgeOutput
 } from '@/lib/interview';
 import { createLLMProvider } from '@/lib/llm';
-import type { MetricConfig, ScoringMetricsPayload } from '@/lib/types';
+import type { MetricConfig, ScoringMetricsPayload, JudgeOutput } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     const llm = createLLMProvider();
     let rawJudgeOutput = '';
-    let judgeOutput;
+    let judgeOutput: JudgeOutput;
 
     try {
       rawJudgeOutput = await llm.complete({
@@ -82,6 +82,13 @@ export async function POST(request: NextRequest) {
       rawJudgeOutput = error instanceof Error ? error.message : 'LLM judge unavailable';
       judgeOutput = buildFallbackJudgeOutput(criteria, transcript, interview.initialTopic);
     }
+
+    const rawMetricScores = Object.fromEntries(
+      criteria.map((criterion) => [
+        criterion.name,
+        Number(judgeOutput.criteria[criterion.name]?.score || 0)
+      ])
+    );
 
     judgeOutput = capJudgeOutputByQuality(judgeOutput, answerQualityCap);
 
@@ -113,7 +120,7 @@ export async function POST(request: NextRequest) {
       criteria.map((criterion) => [criterion.name, Number(judgeOutput.criteria[criterion.name]?.score || 0)])
     );
 
-    const perAnswerScores = buildPerAnswerScores(qualityReport.turns, criteria, metricJudgeScores);
+    const perAnswerScores = buildPerAnswerScores(qualityReport.turns, criteria, rawMetricScores);
 
     const weightedScore = calculateWeightedScore(criteria, judgeOutput);
     const scoringMetrics: ScoringMetricsPayload = {

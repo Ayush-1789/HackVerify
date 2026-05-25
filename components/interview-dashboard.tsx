@@ -31,21 +31,21 @@ function getLevenshteinDistanceLocal(a: string, b: string): number {
 
 function getHeuristicStatus(userAnswer: string | null, originalAnswer?: string | null) {
   if (!userAnswer || !originalAnswer) return null;
-  
+
   const cleanMetadata = (text: string) => {
     return text.replace(/^\[Silence:.*?\]/i, '').trim();
   };
-  
+
   const cleanUser = cleanMetadata(userAnswer);
   const cleanOrig = cleanMetadata(originalAnswer);
-  
+
   if (!cleanOrig || !cleanUser) return null;
   if (cleanUser === cleanOrig) return null;
-  
+
   const distance = getLevenshteinDistanceLocal(cleanOrig.toLowerCase().replace(/[^a-z0-9]/g, ''), cleanUser.toLowerCase().replace(/[^a-z0-9]/g, ''));
   const maxLength = Math.max(cleanOrig.toLowerCase().replace(/[^a-z0-9]/g, '').length, cleanUser.toLowerCase().replace(/[^a-z0-9]/g, '').length);
   const similarity = maxLength > 0 ? 1.0 - distance / maxLength : 1.0;
-  
+
   if (similarity < 0.75) {
     return { type: 'rewrite', similarity };
   } else {
@@ -150,7 +150,7 @@ function parseAnswer(answerText: string | null) {
     const tabSwitches = match[4] || '0';
     const tabAway = match[5] || '0';
     const cleanText = match[6];
-    
+
     return {
       silence: {
         total: totalSilence,
@@ -292,7 +292,7 @@ export default function InterviewDashboard() {
     window.speechSynthesis.cancel();
     const speech = new SpeechSynthesisUtterance(currentQuestion);
     speech.rate = 1.0;
-    
+
     speech.onstart = () => {
       setIsSpeaking(true);
       setStatusMessage('AI is speaking the question...');
@@ -339,7 +339,7 @@ export default function InterviewDashboard() {
       }
 
       if (silenceAudioCtxRef.current) {
-        silenceAudioCtxRef.current.close().catch(() => {});
+        silenceAudioCtxRef.current.close().catch(() => { });
       }
 
       // Cleanup window focus loss listeners
@@ -357,8 +357,10 @@ export default function InterviewDashboard() {
 
   // ─── Auto-scroll transcript ──────────────────────────────────────
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [turns]);
+    if (turns.length > 0) {
+      transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [turns.length]);
 
   const metricSum = totalWeight(metrics);
   const interviewActive = Boolean(interviewId);
@@ -419,7 +421,7 @@ export default function InterviewDashboard() {
     }
 
     if (silenceAudioCtxRef.current) {
-      silenceAudioCtxRef.current.close().catch(() => {});
+      silenceAudioCtxRef.current.close().catch(() => { });
       silenceAudioCtxRef.current = null;
     }
 
@@ -682,7 +684,7 @@ export default function InterviewDashboard() {
           silenceIntervalRef.current = null;
         }
         if (silenceAudioCtxRef.current) {
-          silenceAudioCtxRef.current.close().catch(() => {});
+          silenceAudioCtxRef.current.close().catch(() => { });
           silenceAudioCtxRef.current = null;
         }
 
@@ -722,7 +724,7 @@ export default function InterviewDashboard() {
         formData.append('audio', audioBlob, 'answer.webm');
         formData.append('interviewId', interviewId);
         formData.append('currentTurnId', currentTurnId);
-        
+
         // Append physically tracked waveform hesitation metrics
         formData.append('totalSilence', String(silenceMetricsRef.current.totalSilenceDurationSec));
         formData.append('pauses', String(silenceMetricsRef.current.pauseCount));
@@ -785,14 +787,14 @@ export default function InterviewDashboard() {
       setIsRecording(false);
       setStatusMessage('Stopping recording...');
     }
-    
+
     // Clean up silence tracking
     if (silenceIntervalRef.current) {
       clearInterval(silenceIntervalRef.current);
       silenceIntervalRef.current = null;
     }
     if (silenceAudioCtxRef.current) {
-      silenceAudioCtxRef.current.close().catch(() => {});
+      silenceAudioCtxRef.current.close().catch(() => { });
       silenceAudioCtxRef.current = null;
     }
 
@@ -913,7 +915,7 @@ export default function InterviewDashboard() {
 
       setCurrentTurnId(payload.nextTurnId!);
       setCurrentQuestion(payload.aiQuestion!);
-      
+
       // Reset verification state
       setIsVerifying(false);
       setVerificationTranscript('');
@@ -1153,15 +1155,14 @@ export default function InterviewDashboard() {
                   <h2 className="text-lg font-semibold text-white">Mic and TTS</h2>
                   <p className="mt-1 text-sm text-slate-400">Use the browser microphone and native speech synthesis.</p>
                 </div>
-                <div className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.3em] ${
-                  isRecording
+                <div className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.3em] ${isRecording
                     ? 'recording-badge border-red-400/30 bg-red-500/20 text-red-200'
                     : isTranscribing
                       ? 'border-cyan-400/30 bg-cyan-500/20 text-cyan-200'
                       : isSpeaking
                         ? 'border-amber-400/30 bg-amber-500/20 text-amber-200'
                         : 'border-white/10 bg-white/5 text-slate-400'
-                }`}>
+                  }`}>
                   {isRecording ? '● Recording' : isTranscribing ? '⟳ Transcribing' : isSpeaking ? '🔊 Speaking' : 'Idle'}
                 </div>
               </div>
@@ -1258,7 +1259,7 @@ export default function InterviewDashboard() {
                   </div>
                   <h3 className="text-lg font-semibold text-white mt-3">Evaluation Completed Successfully!</h3>
                   <p className="text-sm text-slate-300 leading-relaxed max-w-md mx-auto">
-                    Excellent work! The 8-turn dynamic technical mock evaluation is complete. 
+                    Excellent work! The 8-turn dynamic technical mock evaluation is complete.
                     Your code-commits, architecture, wrong-answer probing responses, and stack justification are locked in.
                   </p>
                   <div className="mt-4">
@@ -1460,37 +1461,34 @@ export default function InterviewDashboard() {
 
               {report ? (
                 <div className="mt-6 space-y-6 animate-fade-in">
-                  
+
                   {/* Segmented Tab Navigation */}
                   <div className="flex justify-start">
                     <div className="flex gap-1.5 p-1.5 rounded-2xl bg-black/45 border border-white/5 w-full sm:w-auto">
-                      <button 
-                        onClick={() => setReportTab('overview')} 
-                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide transition-all duration-250 flex items-center justify-center gap-2 ${
-                          reportTab === 'overview' 
-                            ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-md shadow-amber-400/15' 
+                      <button
+                        onClick={() => setReportTab('overview')}
+                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide transition-all duration-250 flex items-center justify-center gap-2 ${reportTab === 'overview'
+                            ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-md shadow-amber-400/15'
                             : 'text-slate-400 hover:text-white'
-                        }`}
+                          }`}
                       >
                         <span>📊</span> Overview
                       </button>
-                      <button 
-                        onClick={() => setReportTab('metrics')} 
-                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide transition-all duration-250 flex items-center justify-center gap-2 ${
-                          reportTab === 'metrics' 
-                            ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-md shadow-amber-400/15' 
+                      <button
+                        onClick={() => setReportTab('metrics')}
+                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide transition-all duration-250 flex items-center justify-center gap-2 ${reportTab === 'metrics'
+                            ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-md shadow-amber-400/15'
                             : 'text-slate-400 hover:text-white'
-                        }`}
+                          }`}
                       >
                         <span>🎯</span> Competencies
                       </button>
-                      <button 
-                        onClick={() => setReportTab('turns')} 
-                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide transition-all duration-250 flex items-center justify-center gap-2 ${
-                          reportTab === 'turns' 
-                            ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-md shadow-amber-400/15' 
+                      <button
+                        onClick={() => setReportTab('turns')}
+                        className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold tracking-wide transition-all duration-250 flex items-center justify-center gap-2 ${reportTab === 'turns'
+                            ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-md shadow-amber-400/15'
                             : 'text-slate-400 hover:text-white'
-                        }`}
+                          }`}
                       >
                         <span>💬</span> Per-Turn Scores
                       </button>
@@ -1517,10 +1515,9 @@ export default function InterviewDashboard() {
                               <span>75%</span>
                             </div>
                             <div className="h-2.5 w-full rounded-full bg-slate-950 border border-white/5 overflow-hidden">
-                              <div 
-                                className={`h-full rounded-full transition-all duration-700 ${
-                                  report.weightedPercentage >= 75 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : report.weightedPercentage >= 45 ? 'bg-gradient-to-r from-amber-500 to-amber-400' : 'bg-gradient-to-r from-rose-600 to-rose-500'
-                                }`}
+                              <div
+                                className={`h-full rounded-full transition-all duration-700 ${report.weightedPercentage >= 75 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' : report.weightedPercentage >= 45 ? 'bg-gradient-to-r from-amber-500 to-amber-400' : 'bg-gradient-to-r from-rose-600 to-rose-500'
+                                  }`}
                                 style={{ width: `${report.weightedPercentage}%` }}
                               />
                             </div>
@@ -1555,7 +1552,7 @@ export default function InterviewDashboard() {
                             "{report.summary}"
                           </p>
                         </div>
-                        
+
                         <div className="grid gap-5 sm:grid-cols-2 pt-4 border-t border-white/5">
                           <div className="space-y-3">
                             <h4 className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400 flex items-center gap-2">
@@ -1617,7 +1614,7 @@ export default function InterviewDashboard() {
                               {metricResult.score.toFixed(1)} / 10
                             </span>
                           </div>
-                          
+
                           <p className="text-sm leading-7 text-slate-300">{metricResult.feedback}</p>
 
                           {report.metricBreakdowns?.[metricName] ? (
@@ -1630,7 +1627,7 @@ export default function InterviewDashboard() {
                                   </div>
                                   <p className="text-sm leading-6 text-slate-200 mt-2">{report.metricBreakdowns[metricName].rationale}</p>
                                 </div>
-                                
+
                                 <div className="grid gap-3 sm:grid-cols-2">
                                   {report.metricBreakdowns[metricName].components.map((component) => (
                                     <div key={component.name} className="flex flex-col justify-between rounded-xl bg-black/45 border border-white/5 p-3.5">
@@ -1643,10 +1640,10 @@ export default function InterviewDashboard() {
                                           {component.value.toFixed(1)}<span className="text-[10px] text-slate-500 font-medium">/{component.max}</span>
                                         </div>
                                       </div>
-                                      
+
                                       {/* Horizontal gauge for components */}
                                       <div className="mt-3.5 h-1.5 w-full rounded-full bg-slate-900 overflow-hidden">
-                                        <div 
+                                        <div
                                           className="h-full rounded-full bg-amber-400 transition-all duration-500"
                                           style={{ width: `${(component.value / component.max) * 100}%` }}
                                         />
@@ -1654,7 +1651,7 @@ export default function InterviewDashboard() {
                                     </div>
                                   ))}
                                 </div>
-                                
+
                                 <div className="space-y-2 pt-2">
                                   <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Documented Evidence</div>
                                   <ul className="space-y-2 text-sm text-slate-300">
@@ -1681,10 +1678,10 @@ export default function InterviewDashboard() {
                         const parsed = parseAnswer(turnScore.answer);
                         const isRewrite = turnScore.notes.some(n => n.includes('Full Answer Rewrite'));
                         const isSpelling = turnScore.notes.some(n => n.includes('Spelling Corrected'));
-                        
+
                         return (
                           <article key={`turn-score-${turnScore.turnSequence}`} className="relative rounded-3xl border border-white/10 bg-slate-950/35 p-5 hover:border-white/20 transition-all duration-200">
-                            
+
                             {/* Visual Timeline Marker Node */}
                             <span className="absolute -left-[25px] sm:-left-[33px] top-[26px] flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-full bg-slate-950 border-2 border-white/20">
                               <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-amber-400"></span>
@@ -1722,7 +1719,7 @@ export default function InterviewDashboard() {
                               <div className="rounded-2xl border border-emerald-500/10 bg-emerald-500/5 p-4">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-bold uppercase tracking-[0.24em] text-emerald-300">Candidate Response</span>
-                                  
+
                                   {/* Anti-cheat alerts */}
                                   <div className="flex items-center gap-2">
                                     {isSpelling && (

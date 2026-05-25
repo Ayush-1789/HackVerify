@@ -878,26 +878,64 @@ function buildImprovementNotes(turns: TranscriptTurnAnalysis[]): string[] {
   return [...notes].slice(0, 4);
 }
 
+export function isMetricApplicableToTurn(metricName: string, turnSequence: number): boolean {
+  const norm = metricName.toLowerCase();
+  
+  if (norm.includes('clarity') || norm.includes('problem')) {
+    return turnSequence === 1 || turnSequence === 8;
+  }
+  
+  if (norm.includes('comprehension') || norm.includes('code')) {
+    return turnSequence >= 4 && turnSequence <= 7;
+  }
+  
+  if (norm.includes('ownership') || norm.includes('solution') || norm.includes('architecture')) {
+    return turnSequence >= 2 && turnSequence <= 8;
+  }
+  
+  if (norm.includes('communication') || norm.includes('fluency') || norm.includes('confidence')) {
+    return true; // Communication applies to all turns
+  }
+  
+  return true; // Fallback for custom/unknown metrics
+}
+
 export function buildPerAnswerScores(
   turns: TranscriptTurnAnalysis[],
   criteria: MetricConfig[],
   metricJudgeScores: Record<string, number>
 ): TurnScoreBreakdown[] {
   return turns.map((turn) => {
+    // Filter criteria to only the applicable ones for this turn sequence
+    const applicableCriteria = criteria.filter((c) =>
+      isMetricApplicableToTurn(c.name, turn.turnSequence)
+    );
+
+    // Generate scores only for applicable criteria
     const metricScores = Object.fromEntries(
-      criteria.map((criterion) => {
-        const criterionCap = metricJudgeScores[criterion.name] ?? turn.signals.transcriptConfidence;
-        const turnMetricScore = Number(Math.min(criterionCap, turn.signals.transcriptConfidence).toFixed(2));
+      applicableCriteria.map((criterion) => {
+        const judgeScore = metricJudgeScores[criterion.name] ?? 10.0;
+        const judgeRatio = judgeScore / 10.0;
+        
+        // Scale proportionally by the turn's confidence and the judge's assessment
+        const turnMetricScore = Number(
+          Math.max(
+            0,
+            Math.min(10, turn.signals.transcriptConfidence * (0.3 + 0.7 * judgeRatio))
+          ).toFixed(2)
+        );
         return [criterion.name, turnMetricScore];
       })
     );
 
+    // Compute weighted score using ONLY the applicable criteria weights
+    const totalApplicableWeight = applicableCriteria.reduce((sum, c) => sum + Number(c.weight || 0), 0);
     const weightedScore = Number(
       (
-        criteria.reduce((sum, criterion) => {
+        applicableCriteria.reduce((sum, criterion) => {
           const score = metricScores[criterion.name] ?? 0;
           return sum + score * Number(criterion.weight || 0);
-        }, 0) / 100
+        }, 0) / (totalApplicableWeight || 1)
       ).toFixed(2)
     );
 
