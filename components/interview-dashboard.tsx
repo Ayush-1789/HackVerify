@@ -255,7 +255,7 @@ export default function InterviewDashboard() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+  const transcriptContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Silence & pause waveform tracking refs
   const silenceAudioCtxRef = useRef<AudioContext | null>(null);
@@ -355,10 +355,14 @@ export default function InterviewDashboard() {
     };
   }, []);
 
-  // ─── Auto-scroll transcript ──────────────────────────────────────
+  // ─── Auto-scroll transcript locally without window jumping ─────────
   useEffect(() => {
-    if (turns.length > 0) {
-      transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (turns.length > 0 && transcriptContainerRef.current) {
+      const container = transcriptContainerRef.current;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      });
     }
   }, [turns.length]);
 
@@ -1373,7 +1377,7 @@ export default function InterviewDashboard() {
             {/* ── Rolling Transcript ─────────────────────── */}
             <article className="glass-panel animate-fade-in rounded-[2rem] p-5 sm:p-6" style={{ animationDelay: '180ms' }}>
               <h2 className="text-lg font-semibold text-white">Rolling transcript</h2>
-              <div className="mt-4 max-h-[520px] space-y-4 overflow-y-auto pr-1">
+              <div ref={transcriptContainerRef} className="mt-4 max-h-[520px] space-y-4 overflow-y-auto pr-1">
                 {turns.length === 0 ? (
                   <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.04] px-4 py-6 text-sm text-slate-400">
                     Transcript will appear here after the first question is generated.
@@ -1441,7 +1445,7 @@ export default function InterviewDashboard() {
                     </div>
                   </div>
                 ))}
-                <div ref={transcriptEndRef} />
+                {/* End of transcript container reached */}
               </div>
             </article>
 

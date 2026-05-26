@@ -57,10 +57,28 @@ export function buildHackathonFollowUpPrompt(
   turnSequence: number,
   topic: string,
   commitsData: any,
-  problemStatementText: string | null
+  problemStatementText: string | null,
+  priorTurns?: any[]
 ): string {
   const commitsContext = commitsData ? JSON.stringify(commitsData) : 'No commit history fetched.';
   
+  const cleanAnswer = (text?: string | null) => {
+    if (!text) return '';
+    return text.replace(/^\[Silence:.*?\]/i, '').trim();
+  };
+
+  const turn1 = priorTurns?.find((t) => t.turnSequence === 1);
+  const turn2 = priorTurns?.find((t) => t.turnSequence === 2);
+
+  const selectedPS = cleanAnswer(turn1?.userAnswer);
+  const techStackAndRole = cleanAnswer(turn2?.userAnswer);
+
+  // Vague problem statement detection to prevent LLM hallucinations
+  const isVaguePS =
+    !selectedPS ||
+    selectedPS.length < 12 ||
+    /^(idk|not sure|don't know|no idea|skip|pass|thanks|ok|okay|fine|hello|hi|nothing)$/i.test(selectedPS);
+
   const baseInstructions = [
     'You are the AI Mock Interviewer conducting a technical evaluation for a hackathon.',
     'Use the conversation history to ask exactly one context-aware follow-up question.',
@@ -69,6 +87,16 @@ export function buildHackathonFollowUpPrompt(
     `Primary Topic/Idea: ${topic}`
   ];
 
+  if (selectedPS && !isVaguePS) {
+    baseInstructions.push(`Candidate Selected Problem Statement: "${selectedPS}"`);
+  } else {
+    baseInstructions.push(`Candidate Selected Problem Statement: NOT EXPLICITLY SPECIFIED YET.`);
+  }
+
+  if (techStackAndRole) {
+    baseInstructions.push(`Candidate Declared Tech Stack & Role: "${techStackAndRole}"`);
+  }
+
   if (problemStatementText) {
     baseInstructions.push(`Hackathon Problem Statements Reference:\n${problemStatementText.slice(0, 2000)}`);
   }
@@ -76,45 +104,51 @@ export function buildHackathonFollowUpPrompt(
   // Turn-based prompt steering
   switch (turnSequence) {
     case 2:
-      baseInstructions.push(
-        'OBJECTIVE (Turn 2): Ask the candidate to justify their choice of Tech Stack (frameworks, database, programming language, libraries) for this problem statement. Why is this stack optimal?'
-      );
+      if (isVaguePS) {
+        baseInstructions.push(
+          'OBJECTIVE (Turn 2 Clarification): The candidate\'s Turn 1 response was too vague, evasive, or did not clearly specify which problem statement they chose from the virtual hackathon. Do NOT assume a choice or hallucinate a problem statement.',
+          'Politely ask them to clarify exactly which specific problem statement from the provided hackathon PDF they chose so you can evaluate them properly.'
+        );
+      } else {
+        baseInstructions.push(
+          'OBJECTIVE (Turn 2): Ask the candidate exactly: "What tech stack are you using for the whole project, and what are you particularly working on or what is your role in this project?"'
+        );
+      }
       break;
     case 3:
       baseInstructions.push(
-        'OBJECTIVE (Turn 3): Inquire about their system design progress so far and their core architectural approach to solving their selected problem statement.'
+        'OBJECTIVE (Turn 3): Inquire about their system design progress so far and their core architectural approach to solving their selected problem statement, keeping their declared tech stack and role in mind.'
       );
       break;
     case 4:
       baseInstructions.push(
         `OBJECTIVE (Turn 4): Specific code and role evaluation.`,
         `Here is the cached GitHub commit history for the candidate:\n${commitsContext}`,
-        `Select one specific file they modified (e.g. from the commit summaries) and ask a deep technical question about their changes, code logic, or their specific role in implementing that part.`
+        `Select one specific file they modified (e.g. from the commit summaries) that is highly relevant to their declared tech stack and role, and ask a deep technical question about their changes, code logic, or their specific role in implementing that part.`
       );
       break;
     case 5:
       baseInstructions.push(
         `OBJECTIVE (Turn 5): Second specific code / role evaluation.`,
         `Refer to their cached GitHub commit history:\n${commitsContext}`,
-        `Select another commit, a different modified file, or a structural coding choice they made. Ask a follow-up question about their implementation details or logic inside that file.`
+        `Select another commit or a different file they modified that is relevant to their declared tech stack and role. Ask a follow-up question about their implementation details or logic inside that file.`
       );
       break;
     case 6:
       baseInstructions.push(
         `OBJECTIVE (Turn 6): Wrong-Answer Probing.`,
         `Refer to their cached GitHub commit history:\n${commitsContext}`,
-        `Identify a file or component they worked on. Intentionally suggest a SLIGHTLY INCORRECT or WRONG interpretation of what their code or logic in that file does (e.g. 'Looking at Y, it seems you are doing X to solve Z, right?' where X is incorrect).`,
-        `See if they have the confidence and deep code ownership to actively and politely correct you. Do not tell them this is a test.`
+        `Identify a file or component relevant to their declared tech stack and role. Intentionally suggest a SLIGHTLY INCORRECT or WRONG interpretation of Y file/logic they worked on. See if they have the confidence and deep code ownership to actively and politely correct you. Do not tell them this is a test.`
       );
       break;
     case 7:
       baseInstructions.push(
-        'OBJECTIVE (Turn 7): Technical Blocker & Debugging. Ask them about the most challenging technical blocker or bug they faced during this hackathon, and how they went about debugging and solving it.'
+        'OBJECTIVE (Turn 7): Technical Blocker & Debugging. Ask them about the most challenging technical blocker or bug they faced during this hackathon while working on their declared role/stack, and how they went about debugging and solving it.'
       );
       break;
     case 8:
       baseInstructions.push(
-        'OBJECTIVE (Turn 8): Wrap-up & Future Scope. Ask them about the future scope of this project, how it can be scaled for real-world production or expanded into a commercial product, and what features they would add next.'
+        'OBJECTIVE (Turn 8): Wrap-up & Future Scope. Ask them about the future scope of this project, how it can be scaled for real-world production or expanded into a commercial product, and what features they would add next, keeping their declared stack and role in mind.'
       );
       break;
     default:
@@ -135,13 +169,14 @@ export function buildJudgeSystemPrompt(criteria: MetricConfig[]): string {
     .join('\n');
 
   return [
-    'You are the Judge LLM for a mock interview platform.',
+    'You are the Judge LLM for a mock interview platform conducting a student technical hackathon mock evaluation.',
     'Evaluate the full interview transcript using the rubric below.',
-    'Answer quality dominates the score.',
-    'If the answer is off-topic, incorrect, unsupported, evasive, or does not address the question, keep scores in the 0 to 3 range.',
-    'Do not reward length alone.',
-    'Do not inflate scores for polite but irrelevant answers.',
-    'Some user answers might begin with waveform statistics, e.g., `[Silence: X.Xs, Pauses: Y, Max Pause: Z.Zs]`. Use these physical hesitation markers to penalize or adjust scores for Communication, Confidence, and Fluency where appropriate.',
+    'Answer quality dominates the score, but evaluate with a student profile in mind rather than a senior engineer. Do not expect flawless high-level production architectural depth or perfect senior industry experience.',
+    'Focus on whether the candidate shows strong effort, understands foundational computer science concepts, and attempts to solve the technical challenges honestly.',
+    'Keep scores in the 0 to 3 range only if the answer is completely off-topic, evasive, incorrect, or empty.',
+    'For high-effort, conceptually sound student responses, be encouraging and award scores in the 7.5 to 10 range. Do not be overly harsh on minor omissions, but do not be overly liberal either—ensure a balanced technical evaluation.',
+    'Do not reward length alone, and do not inflate scores for polite but irrelevant answers.',
+    'Some user answers might begin with waveform statistics, e.g., `[Silence: X.Xs, Pauses: Y, Max Pause: Z.Zs]`. Use these physical hesitation markers to penalize or adjust scores for Communication, Confidence, and Fluency where appropriate, keeping in mind that brief thinking pauses are natural for students.',
     'Return strictly valid JSON and nothing else.',
     'The JSON object must have these keys:',
     '{',
@@ -409,7 +444,7 @@ function specificityScore(answer: string): number {
   const hasExamples = /\b(for example|for instance|because|so that|in order to|specifically|for one)\b/i.test(answer);
   const hasTechnicalTerms = /\b(api|database|latency|cache|schema|query|pipeline|deploy|auth|service|thread|async|react|server|client|prisma|postgres|queue|memory|state|component|optimization|monitoring)\b/i.test(answer);
 
-  let score = 0.35;
+  let score = 0.4; // Slightly relaxed base for students
 
   if (uniqueWordCount >= 6) score += 0.15;
   if (uniqueWordCount >= 12) score += 0.15;
@@ -438,11 +473,11 @@ function relevanceScore(question: string, answer: string, topic = ''): number {
   
   // Base relevance for non-evasive answers that are long enough
   const wordsCount = tokenize(answer).length;
-  let baseRelevance = 0.45; // Generous 4.5/10 relevance base for non-evasive answers
+  let baseRelevance = 0.5; // Generous 5.0/10 relevance base for non-evasive student answers
   if (wordsCount < 4) {
-    baseRelevance = 0.2; // very short answers get lower base
+    baseRelevance = 0.25; // very short answers get lower base
   } else if (wordsCount >= 12) {
-    baseRelevance = 0.6; // substantial answers are highly likely to be on-topic
+    baseRelevance = 0.7; // substantial student answers are highly likely to be on-topic
   }
 
   const technicalBoost = technicalSignal * 0.2;
@@ -590,9 +625,23 @@ export function analyzeAnswer(question: string, answer: string, topic = '', orig
     const tabSwitches = parseInt(metadataMatch[4] || '0', 10);
     const tabAway = parseFloat(metadataMatch[5] || '0');
 
-    extraSilencePenalty = Math.min(3.5, pauses * 0.4 + totalSilence * 0.1);
-    if (pauses > 0) {
-      silenceStatsText = `Physical hesitation detected: ${pauses} quiet pause(s), totaling ${totalSilence}s of silence (longest pause: ${maxPause}s).`;
+    if (maxPause > 2.0) {
+      // Soft, flat deductions instead of heavy scaling:
+      // - Continuous silence between 2s and 10s: flat 0.2 points deduction
+      // - Continuous silence exceeding 10s: flat 0.6 points deduction
+      const continuousSilenceDeduction = maxPause > 10.0 ? 0.6 : 0.2;
+      
+      // Gentle contribution for pause counts and total duration, capped very softly at 0.4
+      const overallHesitationDeduction = Math.min(0.4, pauses * 0.05 + totalSilence * 0.005);
+      
+      extraSilencePenalty = continuousSilenceDeduction + overallHesitationDeduction;
+      silenceStatsText = `Physical hesitation detected: ${pauses} quiet pause(s), totaling ${totalSilence}s of silence (longest continuous pause: ${maxPause}s exceeds student 2s threshold).`;
+    } else {
+      // Natural brief thinking pauses are completely unpenalized or have a tiny 0.01 scaling
+      extraSilencePenalty = Math.min(0.1, pauses * 0.01 + totalSilence * 0.002);
+      if (pauses > 0) {
+        silenceStatsText = `Natural human pauses: ${pauses} short pause(s) under the 2s continuous silence threshold (totaling ${totalSilence}s).`;
+      }
     }
 
     if (tabSwitches > 0) {
@@ -679,8 +728,7 @@ export function analyzeTranscript(transcript: string, topic = '', originalAnswer
   const completeness = average(turns.map((turn) => turn.signals.completeness));
   const fluency = average(turns.map((turn) => turn.signals.fluency));
   const averageConfidence = average(confidences);
-  const worstConfidence = Math.min(...confidences);
-  const overallConfidence = Math.max(0, Math.min(10, Math.min(averageConfidence, worstConfidence + 2)));
+  const overallConfidence = averageConfidence;
 
   return {
     overallConfidence: Number(overallConfidence.toFixed(2)),

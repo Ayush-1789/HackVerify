@@ -116,7 +116,8 @@ export async function POST(request: NextRequest) {
       nextSequence,
       interview.initialTopic,
       interview.githubCommitsData,
-      interview.problemStatementText
+      interview.problemStatementText,
+      interview.turns
     );
 
     const llm = createLLMProvider();

@@ -97,6 +97,13 @@ To evaluate hesitation, confidence, and articulation fluency, the browser-side i
 * **Hesitation & Silence Thresholds**:
   * **Physical Silence**: Average magnitude `< 12` registers as silent recording frame.
   * **Pause (Hesitation)**: Triggered when a physical silence streak lasts continuously for $\ge 1000\text{ ms}$ (1.0 second).
+  * **Hesitation Exemption**: Real-time scoring ignores short continuous pauses ($\le 2.0$ seconds), treating them as natural thinking transitions. Deductions are only applied when a pause exceeds 2.0 seconds.
+  * **Silence Penalty Scores**:
+    * Pauses $\le 2.0$s: Capped at a tiny, natural `-0.1` maximum deduction.
+    * Pauses between $2.0$s and $10.0$s: Flat `-0.2` continuous silence deduction.
+    * Pauses exceeding $10.0$s: Flat `-0.6` continuous silence deduction.
+    * Minor scaling of $\text{pauses} \times 0.05 + \text{totalSilence} \times 0.005$ (capped softly at `-0.4`).
+    * The overall combined silence penalty is capped at `-1.0` maximum.
 * **Tracked Metrics**:
   1. `totalSilence`: Cumulative duration (in seconds) spent in physical silence.
   2. `pauses`: The integer count of continuous hesitations ($\ge 1.0\text{s}$).
@@ -191,11 +198,11 @@ Before the final LLM Judge is called, the server calculates objective quality si
 ### 1. Relevance ($0.0 - 10.0$)
 Scores token overlaps between the unique tokens in the Question, Topic, and Answer.
 * **Softer Overlap Math**: `Math.min(0.4, questionOverlap * 0.7 + topicOverlap * 0.2)` plus technical term boosts.
-* **Base Relevance Protection**: Normal non-evasive answers receive a generous base relevance of `0.45` (short answers) or `0.6` (answers $\ge 12$ words) to prevent natural answers from getting extremely low relevance scores. Evasive answers (e.g., *"I don't know"*) are heavily penalized to `0.1`.
+* **Base Relevance Protection**: Normal non-evasive answers receive a generous base relevance of `0.5` (short answers) or `0.7` (answers $\ge 12$ words) to prevent natural student answers from getting extremely low relevance scores. Evasive answers (e.g., *"I don't know"*) are heavily penalized to `0.1`.
 
 ### 2. Specificity ($0.0 - 10.0$)
 Assesses response detail using vocabulary variety, technical terms, and transitional examples:
-* **Base**: `0.35`
+* **Base**: `0.4` (student-relaxed baseline)
 * **Boosts**: Unique word counts $\ge 6$ (`+0.15`), $\ge 12$ (`+0.15`), presence of transitional examples (`+0.15`), numbers (`+0.1`), and industry technical terms like *API, postgres, query, latency, optimize* (`+0.15`).
 
 ### 3. Completeness ($0.0 - 10.0$)
@@ -207,7 +214,9 @@ Optimized for succinct, high-quality responses:
 Starts at a perfect `10.0` and applies deductions:
 * **Filler Words**: Deducts `-0.1` per filler occurrence (e.g. *um, uh, like, you know, basically*) scaled by **4.0x** (yielding `-0.4` per occurrence).
 * **Word Repetition**: immediate word stutters scaled by **3.0x**.
-* **Waveform Silence**: Deducts `-0.4` per pause ($\ge 1.0\text{s}$) and `-0.1` per cumulative second of silence (max silence deduction capped at `-3.5`).
+* **Waveform Silence (Student-Calibrated)**:
+  * Quiet pauses $\le 2.0$s: Capped at a tiny, natural `-0.1` maximum deduction.
+  * Quiet pauses $> 2.0$s: Applies a flat continuous silence penalty (`-0.2` if pause is between $2.0$s and $10.0$s; `-0.6` if pause exceeds $10.0$s) plus a gentle pause count and total silence contribution ($\text{pauses} \times 0.05 + \text{totalSilence} \times 0.005$, capped softly at $0.4$). The total combined silence penalty is capped at `-1.0` maximum.
 * **Tab Switches**: Deducts `-2.0` per focus loss and `-0.2` per cumulative second spent away (max tab loss deduction capped at `-6.0`).
 * **Cheat Rewrite Infraction**: Deducts `-3.0` directly.
 * **Fluency Formula**:
@@ -233,45 +242,47 @@ Recruiters can customize the criteria and weights in the recruiter dashboard bef
 
 ### 2. Anti-Inflation Programmatic Capping
 To prevent the Judge LLM from inflating scores for polite but shallow, hesitant, or cheated transcripts, every metric returned by the LLM is programmatically capped:
-$$\text{Final Score} = \min\left(\text{LLM Score}, \text{Transcript Quality Cap}\right)$$
-The final weighted score is then computed:
-$$\text{Final Weighted Score} = \frac{\sum \left(\text{Final Score}_i \times \text{Weight}_i\right)}{100}$$
+* **Transcript Quality Cap**: Estimated as the direct average of all individual turn confidence scores (`averageConfidence`), ensuring a balanced evaluation where a single poor or skipped turn (e.g. an honest *"Oh, no idea"*) does not disproportionately anchor or crush the entire interview report to a baseline score.
+* **Metric-Level Capping**: Each metric score returned by the Judge LLM is capped at the overall Transcript Quality Cap:
+  $$\text{Final Score}_i = \min\left(\text{LLM Score}_i, \text{Transcript Quality Cap}\right)$$
+* **Final Weighted Score Calculation**:
+  $$\text{Final Weighted Score} = \frac{\sum \left(\text{Final Score}_i \times \text{Weight}_i\right)}{100}$$
 
 ---
 
 ## 🔄 The 8-Turn Progression Steering Flow
 
-The mock interview proceeds through a carefully structured 8-turn sequence to comprehensively evaluate a candidate's hackathon project:
+The mock interview proceeds through a carefully structured, adaptive 8-turn sequence to comprehensively evaluate a candidate's hackathon project:
 
 ```
 [Turn 1: Problem Selection & Motivation]
-  ├── (Prompted using the uploaded Problem Statements PDF)
-  └── Motive for selecting this statement over other options.
+  ├── Prompts the candidate to declare their selected problem statement and their motivation.
+  └── Anti-Hallucination Guard: If response is vague/evasive, triggers a Turn 2 Clarification loop.
           ↓
-[Turn 2: Tech Stack Justification]
-  └── Frameworks, database, programming language, and why optimal.
+[Turn 2: Tech Stack & Role Intake]
+  ├── Intake of candidate's technology stack and specific development role.
+  └── Used to dynamically target specific files for the AI's deep code-probing turns.
           ↓
 [Turn 3: System Design & Architecture]
-  └── Progress so far and core architectural system design choice.
+  └── Architectural approach and progress so far, customized to their stack/role.
           ↓
 [Turn 4: Deep Code Commit Evaluation #1]
-  └── AI reads candidate's cached GitHub commit history, identifies 
-      a modified file, and asks a deep technical question on their logic.
+  └── AI reads the cached GitHub commit history, selects a modified file
+      highly relevant to their declared stack/role, and asks a deep code question.
           ↓
 [Turn 5: Deep Code Commit Evaluation #2]
-  └── Evaluates a different modified file or structural code pattern 
-      from their commit history, probing role and implementation details.
+  └── Probes another file or system component modified by the candidate
+      associated with their technical role, checking ownership of implementation.
           ↓
 [Turn 6: Wrong-Answer Probing (Confidence & Ownership Test)]
-  └── AI suggests a slightly incorrect interpretation of their commit code 
-      (e.g., 'Looking at file Y, it seems you do X to solve Z?') to see 
-      if they have the confidence and deep code ownership to correction-verify.
+  └── AI suggests a slightly incorrect interpretation of their commit code logic
+      to see if they have the confidence and deep system ownership to politely correct it.
           ↓
 [Turn 7: Technical Blocker & Debugging]
-  └── Challenging bugs faced during the hackathon and how they debugged.
+  └── Probes the most challenging technical blockers faced inside their role and how they debugged them.
           ↓
 [Turn 8: Wrap-up & Future Scope]
-  └── How the project can scale for production and visionary commercial potential.
+  └── Discussion on scaling, productionizing, and commercial potential for their stack.
 ```
 
 ---
